@@ -13,14 +13,14 @@ const polarClient = new Polar({
   server: "sandbox",
 });
 
-const prisma = new PrismaClient();
 export const auth = betterAuth({
-  database: prismaAdapter(prisma, {
+  database: prismaAdapter(db, {
     provider: "mongodb",
   }),
   emailAndPassword: {
     enabled: true,
   },
+  trustedOrigins: [env.BETTER_AUTH_URL],
 
   plugins: [
     ...(env.POLAR_ACCESS_TOKEN && env.POLAR_ACCESS_TOKEN !== "dummy"
