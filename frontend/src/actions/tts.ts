@@ -22,9 +22,6 @@ interface GenerateSpeechResult {
   error?: string;
 }
 
-const S3_BUCKET_URL =
-  "https://ai-voice-studio-sahand.s3.ap-southeast-2.amazonaws.com";
-
 export async function generateSpeech(
   data: GenerateSpeechData,
 ): Promise<GenerateSpeechResult> {
@@ -58,12 +55,10 @@ export async function generateSpeech(
       };
     }
 
-    const response = await fetch(env.MODAL_API_URL, {
+    const response = await fetch(`${env.NEXT_PUBLIC_API_URL}/text-to-speech`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Modal-Key": env.MODAL_API_KEY,
-        "Modal-Secret": env.MODAL_API_SECRET,
       },
       body: JSON.stringify({
         text: data.text,
@@ -78,9 +73,9 @@ export async function generateSpeech(
       return { success: false, error: "Failed to generate speech" };
     }
 
-    const result = (await response.json()) as { s3_Key: string };
+    const result = (await response.json()) as { s3_Key: string; url?: string };
 
-    const audioUrl = `${S3_BUCKET_URL}/${result.s3_Key}`;
+    const audioUrl = result.url ?? `${env.NEXT_PUBLIC_AUDIO_BASE_URL}/${result.s3_Key}`;
 
     await db.user.update({
       where: { id: session.user.id },

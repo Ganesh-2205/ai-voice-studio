@@ -6,13 +6,13 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 
 model User {
-  id            String    @id
+  id            String    @id @map("_id")
   name          String
   email         String
   emailVerified Boolean   @default(false)
@@ -30,10 +30,10 @@ model User {
 }
 
 model AudioProject {
-     id          String   @id @default(cuid())
+  id          String   @id @default(cuid()) @map("_id")
   name        String?
   text        String
-    audioUrl    String
+  audioUrl    String
   s3Key       String
   language    String
   voiceS3Key  String
@@ -49,7 +49,7 @@ model AudioProject {
 }
 
 model UploadedVoice {
-  id        String   @id @default(cuid())
+  id        String   @id @default(cuid()) @map("_id")
   name      String
   s3Key     String
   url       String
@@ -62,7 +62,7 @@ model UploadedVoice {
 }
 
 model Session {
-  id        String   @id
+  id        String   @id @map("_id")
   expiresAt DateTime
   token     String
   createdAt DateTime @default(now())
@@ -77,7 +77,7 @@ model Session {
 }
 
 model Account {
-  id                    String    @id
+  id                    String    @id @map("_id")
   accountId             String
   providerId            String
   userId                String
@@ -96,7 +96,7 @@ model Account {
 }
 
 model Verification {
-  id         String   @id
+  id         String   @id @map("_id")
   identifier String
   value      String
   expiresAt  DateTime

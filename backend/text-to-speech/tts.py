@@ -3,6 +3,7 @@ import os
 import sys
 from typing import Optional
 import uuid
+import requests
 
 import modal 
 
@@ -17,12 +18,14 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install("numpy==1.26.0", "torch==2.6.0")
     .pip_install_from_requirements("requirements.txt")
+    .pip_install("cloudinary")
     .apt_install("ffmpeg")
 )
 
 volume = modal.Volume.from_name("hf-cache-ai-voice-studio", create_if_missing=True)
 
-s3_secret = modal.Secret.from_name("ai-voice-studio-aws-secret")
+# Update to Cloudinary secret name
+cloudinary_secret = modal.Secret.from_name("ai-voice-studio-cloudinary-secret")
 
 class TextToSpeechRequest(BaseModel):
     text: str
@@ -34,36 +37,59 @@ class TextToSpeechRequest(BaseModel):
 
 class TextToSpeechResponse(BaseModel):
     s3_Key: str
+    url: Optional[str] = None
 
 @app.cls(
     image=image,
     gpu="L40S",
     volumes={
         "/root/.cache/huppingface": volume,
-        "/s3-mount": modal.CloudBucketMount("ai-voice-studio-sahand", secret=s3_secret)
     },
     scaledown_window=120,
-    secrets=[s3_secret]
+    secrets=[cloudinary_secret]
 )
 
 class TextToSpeachServer:
     @modal.enter()
     def load_model(self):
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+        import cloudinary
+        
+        cloudinary.config(
+            cloud_name=os.environ["CLOUDINARY_CLOUD_NAME"],
+            api_key=os.environ["CLOUDINARY_API_KEY"],
+            api_secret=os.environ["CLOUDINARY_API_SECRET"],
+            secure=True
+        )
+        
         self.model = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
 
     @modal.fastapi_endpoint(method="POST", requires_proxy_auth=True)
     def generate_speech(self, request: TextToSpeechRequest) -> TextToSpeechResponse:
+        import cloudinary.uploader
+
+        # Local temp storage for clone prompt
+        prompt_temp_path = None
+        
         with torch.no_grad():
             if request.voice_s3_key:
-                audio_prompt_path = f"/s3-mount/{request.voice_s3_key}"
+                # voice_s3_key might now be a full URL from Cloudinary (returned by frontend)
+                voice_input = request.voice_s3_key
+                prompt_temp_path = f"/tmp/prompt_{uuid.uuid4()}.wav"
+                
+                print(f"Fetching voice sample: {voice_input}...")
+                if voice_input.startswith("http"):
+                    r = requests.get(voice_input)
+                    with open(prompt_temp_path, "wb") as f:
+                        f.write(r.content)
+                else:
+                    # Logic for internal public_id if needed, 
+                    # but we'll assume frontend sends URL for simplicity
+                    raise ValueError("voice_s3_key must be a full URL")
 
-                if not os.path.exists(audio_prompt_path):
-                    raise FileNotFoundError(
-                        f"Prompt audio not found at {audio_prompt_path}")
                 wav = self.model.generate(
                     request.text, 
-                    audio_prompt_path=audio_prompt_path,
+                    audio_prompt_path=prompt_temp_path,
                     language_id=request.language,
                     exaggeration=request.exaggeration,
                     cfg_weight=request.cfg_weight
@@ -77,20 +103,25 @@ class TextToSpeachServer:
                 )
             wav_cpu = wav.cpu()
 
-        # Convert the audio tensor to WAV format bytes
-        buffer = io.BytesIO()  # Create an in-memory buffer
-        torchaudio.save(buffer, wav_cpu, self.model.sr, format="wav")  # Save as WAV
-        buffer.seek(0)  # Reset buffer position to start
-        audio_bytes = buffer.read()  # Read all bytes            
+        # Save generated audio to buffer
+        buffer = io.BytesIO()
+        torchaudio.save(buffer, wav_cpu, self.model.sr, format="wav")
+        buffer.seek(0)
 
+        # Upload to Cloudinary
+        print("Uploading generated audio to Cloudinary...")
+        upload_result = cloudinary.uploader.upload(
+            buffer,
+            resource_type="auto",
+            folder="ai-voice-studio/generated"
+        )
+        
+        # Cleanup temp file
+        if prompt_temp_path and os.path.exists(prompt_temp_path):
+            os.remove(prompt_temp_path)
 
-        audio_uuid = str(uuid.uuid4())  
-        s3_key = f"tts/{audio_uuid}.wav"
-
-
-        s3_path = f"/s3-mount/{s3_key}" 
-        os.makedirs(os.path.dirname(s3_path), exist_ok=True)
-        with open(s3_path, "wb") as f:
-            f.write(audio_bytes)
-        print(f"Saved audio to S3: {s3_key}")
-        return TextToSpeechResponse(s3_Key=s3_key)
+        print(f"Uploaded to Cloudinary: {upload_result['secure_url']}")
+        return TextToSpeechResponse(
+            s3_Key=upload_result['public_id'],
+            url=upload_result['secure_url']
+        )

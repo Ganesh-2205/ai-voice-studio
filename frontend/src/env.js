@@ -7,18 +7,21 @@ export const env = createEnv({
    * isn't built with invalid env vars.
    */
   server: {
-    DATABASE_URL: z.string().url(),
+    DATABASE_URL: z.string().optional(),
     BETTER_AUTH_SECRET: z.string(),
     BETTER_AUTH_URL: z.string().url(),
-    POLAR_ACCESS_TOKEN: z.string(),
-    POLAR_WEBHOOK_SECRET: z.string(),
+    POLAR_ACCESS_TOKEN: z.string().optional(),
+    POLAR_WEBHOOK_SECRET: z.string().optional(),
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
     AWS_REGION: z.string().optional(),
     AWS_S3_BUCKET_NAME: z.string().optional(),
-    MODAL_API_URL: z.string().url(),
-    MODAL_API_KEY: z.string(),
-    MODAL_API_SECRET: z.string(),
+    MODAL_API_URL: z.string().url().optional(),
+    MODAL_API_KEY: z.string().optional(),
+    MODAL_API_SECRET: z.string().optional(),
+    CLOUDINARY_CLOUD_NAME: z.string(),
+    CLOUDINARY_API_KEY: z.string(),
+    CLOUDINARY_API_SECRET: z.string(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -31,6 +34,8 @@ export const env = createEnv({
    */
   client: {
     // NEXT_PUBLIC_CLIENTVAR: z.string(),
+    NEXT_PUBLIC_API_URL: z.string().url(),
+    NEXT_PUBLIC_AUDIO_BASE_URL: z.string().url().optional(),
   },
 
   /**
@@ -51,7 +56,12 @@ export const env = createEnv({
     MODAL_API_URL: process.env.MODAL_API_URL,
     MODAL_API_KEY: process.env.MODAL_API_KEY,
     MODAL_API_SECRET: process.env.MODAL_API_SECRET,
+    CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
+    CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
+    CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+    NEXT_PUBLIC_AUDIO_BASE_URL: process.env.NEXT_PUBLIC_AUDIO_BASE_URL,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

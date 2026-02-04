@@ -1,12 +1,6 @@
 "use server";
 
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-} from "@aws-sdk/client-s3";
-
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { v2 as cloudinary } from "cloudinary";
 
 import { auth } from "~/lib/auth";
 import { headers } from "next/headers";
@@ -15,12 +9,10 @@ import { env } from "~/env";
 import { db } from "~/server/db";
 import { cache } from "react";
 
-const s3Client = new S3Client({
-  region: env.AWS_REGION ?? "us-east-1",
-  credentials: {
-    accessKeyId: env.AWS_ACCESS_KEY_ID ?? "",
-    secretAccessKey: env.AWS_SECRET_ACCESS_KEY ?? "",
-  },
+cloudinary.config({
+  cloud_name: env.CLOUDINARY_CLOUD_NAME,
+  api_key: env.CLOUDINARY_API_KEY,
+  api_secret: env.CLOUDINARY_API_SECRET,
 });
 
 interface UploadVoiceResult {
@@ -44,11 +36,11 @@ export async function uploadVoice(
     }
 
     if (
-      !env.AWS_ACCESS_KEY_ID ||
-      !env.AWS_SECRET_ACCESS_KEY ||
-      !env.AWS_S3_BUCKET_NAME
+      !env.CLOUDINARY_CLOUD_NAME ||
+      !env.CLOUDINARY_API_KEY ||
+      !env.CLOUDINARY_API_SECRET
     ) {
-      return { success: false, error: "AWS S3 not configured" };
+      return { success: false, error: "Cloudinary not configured" };
     }
 
     const file = formData.get("voice") as File;
@@ -65,41 +57,41 @@ export async function uploadVoice(
       return { success: false, error: "File must be under 10MB" };
     }
 
-    const fileExtension = file.name.split(".").pop();
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    const fileName = `voices/${session.user.id}/${Date.now()}.${fileExtension}`;
-
-    await s3Client.send(
-      new PutObjectCommand({
-        Bucket: env.AWS_S3_BUCKET_NAME ?? "",
-        Key: fileName,
-        Body: Buffer.from(await file.arrayBuffer()),
-        ContentType: file.type,
-      }),
-    );
-
-    const signedUrl = await getSignedUrl(
-      s3Client,
-      new GetObjectCommand({
-        Bucket: env.AWS_S3_BUCKET_NAME ?? "",
-        Key: fileName,
-      }),
-      { expiresIn: 3600 * 24 * 7 },
-    );
+    const uploadResult = await new Promise((resolve, reject) => {
+      cloudinary.uploader
+        .upload_stream(
+          {
+            resource_type: "auto",
+            folder: `ai-voice-studio/voices/${session.user.id}`,
+          },
+          (error, result) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(result);
+            }
+          },
+        )
+        .end(buffer);
+    }) as any;
 
     const uploadedVoice = await db.uploadedVoice.create({
       data: {
         name: file.name,
-        s3Key: fileName,
-        url: signedUrl,
+        s3Key: uploadResult.public_id, // We'll keep the field name s3Key for now to avoid schema changes if possible, but store public_id
+        url: uploadResult.secure_url,
         userId: session.user.id,
       },
     });
+
     return {
       success: true,
       id: uploadedVoice.id,
-      s3Key: fileName,
-      url: signedUrl,
+      s3Key: uploadResult.public_id,
+      url: uploadResult.secure_url,
     };
   } catch (error) {
     console.error("Voice upload error:", error);
